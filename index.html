@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Garden Planner</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <div class="toolbar">
+            <div class="toolbar-section">
+                <h1>Garden Planner</h1>
+            </div>
+
+            <div class="toolbar-section">
+                <button id="placePlantTool" class="tool-btn" title="Place Plant (click in bed)">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle cx="10" cy="10" r="6" fill="currentColor"/>
+                    </svg>
+                    Place Plant
+                </button>
+            </div>
+
+            <div class="toolbar-section">
+                <button id="zoomIn" class="tool-btn" title="Zoom In">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <path d="M13 13L17 17M9 6V12M6 9H12" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+                <button id="zoomOut" class="tool-btn" title="Zoom Out">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <path d="M13 13L17 17M6 9H12" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </button>
+                <button id="zoomFit" class="tool-btn" title="Fit to Screen">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <rect x="3" y="3" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <path d="M7 7L10 10M13 7L10 10M7 13L10 10M13 13L10 10" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="toolbar-section">
+                <button id="printBtn" class="tool-btn" title="Print">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M4 6V2h12v4M4 6H2v8h3M4 6h12M16 6h2v8h-3M5 11h10v7H5z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    Print
+                </button>
+                <button id="clearBtn" class="tool-btn danger" title="Clear All">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    Clear
+                </button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="sidebar">
+                <div class="panel">
+                    <h3>Beds</h3>
+                    <div id="bedsList" class="beds-list"></div>
+                    <button id="addBedBtn" class="btn btn-primary">+ Add Bed</button>
+                </div>
+
+                <div class="panel" id="selectedBedPanel" style="display: none;">
+                    <h3>Bed Properties</h3>
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="bedName" placeholder="e.g., North Bed">
+                    </div>
+
+                    <details class="collapsible-section">
+                        <summary>Dimensions</summary>
+                        <div class="collapsible-content">
+                            <div class="form-group">
+                                <label>Type</label>
+                                <select id="bedType" disabled>
+                                    <option value="rectangle">Rectangle</option>
+                                    <option value="circle">Circle</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="widthGroup">
+                                <label>Width (inches)</label>
+                                <input type="number" id="bedWidth" min="12" step="1">
+                            </div>
+                            <div class="form-group" id="heightGroup">
+                                <label>Height (inches)</label>
+                                <input type="number" id="bedHeight" min="12" step="1">
+                            </div>
+                            <div class="form-group" id="radiusGroup" style="display: none;">
+                                <label>Radius (inches)</label>
+                                <input type="number" id="bedRadius" min="6" step="1">
+                            </div>
+                        </div>
+                    </details>
+
+                    <h4 style="margin-top: 16px; margin-bottom: 8px; font-size: 14px;">Plants in This Bed</h4>
+                    <div id="bedPlantsList" class="bed-plants-list"></div>
+                    <button id="addPlantToBedBtn" class="btn btn-primary">+ Add Plant</button>
+                    <button id="deleteBed" class="btn btn-danger" style="margin-top: 8px;">Delete Bed</button>
+                </div>
+            </div>
+
+            <div class="canvas-container">
+                <canvas id="gardenCanvas"></canvas>
+                <div class="canvas-info">
+                    <span id="canvasInfo">Use mouse wheel to zoom, drag to pan</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Bed Modal -->
+    <div id="addBedModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Bed</h3>
+                <button class="modal-close" id="closeAddBed">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Bed Name</label>
+                    <input type="text" id="newBedName" placeholder="e.g., North Bed">
+                </div>
+                <div class="form-group">
+                    <label>Bed Type</label>
+                    <select id="newBedType">
+                        <option value="rectangle">Rectangle</option>
+                        <option value="circle">Circle</option>
+                    </select>
+                </div>
+                <div class="form-group" id="newBedWidthGroup">
+                    <label>Width (inches)</label>
+                    <input type="number" id="newBedWidth" min="12" step="6" value="48" placeholder="e.g., 48">
+                </div>
+                <div class="form-group" id="newBedHeightGroup">
+                    <label>Height (inches)</label>
+                    <input type="number" id="newBedHeight" min="12" step="6" value="96" placeholder="e.g., 96">
+                </div>
+                <div class="form-group" id="newBedRadiusGroup" style="display: none;">
+                    <label>Radius (inches)</label>
+                    <input type="number" id="newBedRadius" min="6" step="6" value="24" placeholder="e.g., 24">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelAddBed" class="btn btn-secondary">Cancel</button>
+                <button id="saveNewBed" class="btn btn-primary">Add Bed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Plant to Bed Modal -->
+    <div id="addPlantToBedModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Add Plant to Bed</h3>
+                <button class="modal-close" id="closeAddPlantToBed">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Plant Name</label>
+                    <input type="text" id="plantName" placeholder="e.g., Tomato">
+                </div>
+                <div class="form-group">
+                    <label>Spacing (inches)</label>
+                    <input type="number" id="plantSpacing" min="1" step="1" placeholder="e.g., 24">
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <div class="color-picker">
+                        <div class="color-swatches" id="colorSwatches">
+                            <!-- Color swatches will be populated by JS -->
+                        </div>
+                        <div class="custom-color-section">
+                            <label class="custom-color-label">
+                                <input type="color" id="plantColor" value="#22c55e">
+                                <span>Custom Color</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
+
+                <div class="form-group">
+                    <label>Fill Method</label>
+                    <select id="fillMethod">
+                        <option value="auto">Auto Fill (maximize plants)</option>
+                        <option value="count">Specific Number of Plants</option>
+                        <option value="rows">Number of Rows</option>
+                        <option value="percentage">Percentage of Bed</option>
+                    </select>
+                </div>
+                <div class="form-group" id="fillValueGroup" style="display: none;">
+                    <label id="fillValueLabel">Value</label>
+                    <input type="number" id="fillValue" min="1" step="1">
+                </div>
+                <div class="form-group">
+                    <label>Arrangement Pattern</label>
+                    <select id="fillPattern">
+                        <option value="grid">Grid Pattern</option>
+                        <option value="hexagonal">Hexagonal Pattern (15% more efficient)</option>
+                    </select>
+                </div>
+                <div id="fillPreview" class="fill-preview"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelAddPlantToBed" class="btn btn-secondary">Cancel</button>
+                <button id="saveAddPlantToBed" class="btn btn-primary">Add Plant</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="placement.js"></script>
+    <script src="canvas.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
