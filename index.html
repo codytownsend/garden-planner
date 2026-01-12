@@ -13,14 +13,6 @@
                 <h1>Garden Planner</h1>
             </div>
 
-            <div class="toolbar-section">
-                <button id="placePlantTool" class="tool-btn" title="Place Plant (click in bed)">
-                    <svg width="20" height="20" viewBox="0 0 20 20">
-                        <circle cx="10" cy="10" r="6" fill="currentColor"/>
-                    </svg>
-                    Place Plant
-                </button>
-            </div>
 
             <div class="toolbar-section">
                 <button id="zoomIn" class="tool-btn" title="Zoom In">
@@ -44,6 +36,13 @@
             </div>
 
             <div class="toolbar-section">
+                <button id="reportBtn" class="tool-btn" title="View Report">
+                    <svg width="20" height="20" viewBox="0 0 20 20">
+                        <path d="M3 3h14v14H3z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M6 7h8M6 10h8M6 13h5" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                    Report
+                </button>
                 <button id="printBtn" class="tool-btn" title="Print">
                     <svg width="20" height="20" viewBox="0 0 20 20">
                         <path d="M4 6V2h12v4M4 6H2v8h3M4 6h12M16 6h2v8h-3M5 11h10v7H5z" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -96,20 +95,61 @@
                                 <label>Radius (inches)</label>
                                 <input type="number" id="bedRadius" min="6" step="1">
                             </div>
+                            <div class="form-group">
+                                <label>Rotation (degrees)</label>
+                                <input type="number" id="bedRotation" min="0" max="359" step="1" value="0">
+                            </div>
                         </div>
                     </details>
 
-                    <h4 style="margin-top: 16px; margin-bottom: 8px; font-size: 14px;">Plants in This Bed</h4>
-                    <div id="bedPlantsList" class="bed-plants-list"></div>
-                    <button id="addPlantToBedBtn" class="btn btn-primary">+ Add Plant</button>
+                    <div id="overviewControls">
+                        <button id="editPlantsBtn" class="btn btn-primary" style="background: #10b981; margin-top: 16px;">
+                            <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 6px;">
+                                <circle cx="8" cy="8" r="2" fill="currentColor"/>
+                                <circle cx="4" cy="4" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="4" r="1.5" fill="currentColor"/>
+                                <circle cx="4" cy="12" r="1.5" fill="currentColor"/>
+                                <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+                            </svg>
+                            Edit Plants →
+                        </button>
+                    </div>
+
+                    <div id="detailControls" style="display: none;">
+                        <h4 style="margin-top: 16px; margin-bottom: 8px; font-size: 14px;">Plants in This Bed</h4>
+                        <div id="bedPlantsList" class="bed-plants-list"></div>
+                        <button id="addPlantToBedBtn" class="btn btn-primary">+ Add Plant</button>
+                    </div>
+
                     <button id="deleteBed" class="btn btn-danger" style="margin-top: 8px;">Delete Bed</button>
                 </div>
             </div>
 
             <div class="canvas-container">
+                <div id="detailViewBanner" class="detail-view-banner" style="display: none;">
+                    <div class="detail-view-info">
+                        <svg width="20" height="20" viewBox="0 0 20 20" style="vertical-align: middle;">
+                            <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2"/>
+                            <path d="M10 6V14M6 10H14" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                        <span id="detailViewBedName">Detail View</span>
+                    </div>
+                    <button id="exitDetailView" class="btn-exit-detail">
+                        <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 4px;">
+                            <path d="M10 4L6 8L10 12" stroke="currentColor" stroke-width="2" fill="none"/>
+                        </svg>
+                        Back to Overview
+                    </button>
+                </div>
                 <canvas id="gardenCanvas"></canvas>
                 <div class="canvas-info">
                     <span id="canvasInfo">Use mouse wheel to zoom, drag to pan</span>
+                </div>
+                <div id="bedSelectedHint" class="bed-selected-hint" style="display: none;">
+                    <svg width="16" height="16" viewBox="0 0 16 16" style="vertical-align: middle; margin-right: 6px;">
+                        <path d="M8 2L3 7h10L8 2zM8 14l5-5H3l5 5z" fill="currentColor"/>
+                    </svg>
+                    Double-click or use "Edit Plants →" button to edit
                 </div>
             </div>
         </div>
@@ -185,33 +225,28 @@
                     </div>
                 </div>
 
-                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e2e8f0;">
-
-                <div class="form-group">
-                    <label>Fill Method</label>
-                    <select id="fillMethod">
-                        <option value="auto">Auto Fill (maximize plants)</option>
-                        <option value="count">Specific Number of Plants</option>
-                        <option value="rows">Number of Rows</option>
-                        <option value="percentage">Percentage of Bed</option>
-                    </select>
-                </div>
-                <div class="form-group" id="fillValueGroup" style="display: none;">
-                    <label id="fillValueLabel">Value</label>
-                    <input type="number" id="fillValue" min="1" step="1">
-                </div>
-                <div class="form-group">
-                    <label>Arrangement Pattern</label>
-                    <select id="fillPattern">
-                        <option value="grid">Grid Pattern</option>
-                        <option value="hexagonal">Hexagonal Pattern (15% more efficient)</option>
-                    </select>
-                </div>
                 <div id="fillPreview" class="fill-preview"></div>
             </div>
             <div class="modal-footer">
                 <button id="cancelAddPlantToBed" class="btn btn-secondary">Cancel</button>
                 <button id="saveAddPlantToBed" class="btn btn-primary">Add Plant</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Report Modal -->
+    <div id="reportModal" class="modal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Garden Planting Report</h3>
+                <button class="modal-close" id="closeReport">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="reportContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="printReport" class="btn btn-primary">Print Report</button>
+                <button id="closeReportBtn" class="btn btn-secondary">Close</button>
             </div>
         </div>
     </div>

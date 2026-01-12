@@ -12,9 +12,12 @@ class GardenPlanner {
         // Application state
         this.beds = [];
         this.selectedBed = null;
-        this.currentTool = null; // null (default/select), 'place-plant'
+        this.currentTool = null; // null (default/select)
         this.editingPlantIndex = null; // Track which plant is being edited
         this.selectedColor = '#22c55e'; // Current selected color
+
+        // View state
+        this.bedDetailMode = false; // When true, show single bed in detail
 
         // Predefined color palette for plants
         this.colorPalette = [
@@ -39,9 +42,20 @@ class GardenPlanner {
         // Interaction state
         this.isDraggingBed = false;
         this.isResizing = false;
+        this.isRotating = false;
         this.resizeHandle = null;
         this.dragStart = null;
         this.bedDragStart = null;
+        this.rotationStart = null;
+
+        // Plant group interaction state
+        this.selectedPlantGroupIndex = null;
+        this.isDraggingDivider = false;
+        this.draggedDividerIndex = null;
+
+        // Double-click detection
+        this.lastClickTime = 0;
+        this.lastClickedBed = null;
 
         // Load saved data
         this.loadFromStorage();
@@ -56,17 +70,7 @@ class GardenPlanner {
     setupEventListeners() {
         const canvas = this.canvas.canvas;
 
-        // Tool buttons
-        const placePlantBtn = document.getElementById('placePlantTool');
-        if (placePlantBtn) {
-            placePlantBtn.addEventListener('click', () => {
-                if (this.currentTool === 'place-plant') {
-                    this.setTool(null);
-                } else {
-                    this.setTool('place-plant');
-                }
-            });
-        }
+        // No tool buttons needed anymore
 
         // Zoom buttons
         document.getElementById('zoomIn').addEventListener('click', () => {
@@ -117,6 +121,13 @@ class GardenPlanner {
                 this.selectedBed.name = e.target.value;
                 this.renderBedsList();
                 this.saveToStorage();
+
+                // Update detail view banner if in detail mode
+                if (this.bedDetailMode) {
+                    const bedName = this.selectedBed.name || 'Unnamed Bed';
+                    document.getElementById('detailViewBedName').textContent = `Detail View: ${bedName}`;
+                }
+
                 this.render();
             }
         });
@@ -124,6 +135,9 @@ class GardenPlanner {
         document.getElementById('bedWidth').addEventListener('input', (e) => {
             if (this.selectedBed && this.selectedBed.type === 'rectangle') {
                 this.selectedBed.width = Math.max(12, parseInt(e.target.value) || 12);
+                this.recalculateAllPlantPositions();
+                this.updateBedPlantsList();
+                this.renderBedsList();
                 this.saveToStorage();
                 this.render();
             }
@@ -132,6 +146,9 @@ class GardenPlanner {
         document.getElementById('bedHeight').addEventListener('input', (e) => {
             if (this.selectedBed && this.selectedBed.type === 'rectangle') {
                 this.selectedBed.height = Math.max(12, parseInt(e.target.value) || 12);
+                this.recalculateAllPlantPositions();
+                this.updateBedPlantsList();
+                this.renderBedsList();
                 this.saveToStorage();
                 this.render();
             }
@@ -140,6 +157,17 @@ class GardenPlanner {
         document.getElementById('bedRadius').addEventListener('input', (e) => {
             if (this.selectedBed && this.selectedBed.type === 'circle') {
                 this.selectedBed.radius = Math.max(6, parseInt(e.target.value) || 6);
+                this.recalculateAllPlantPositions();
+                this.updateBedPlantsList();
+                this.renderBedsList();
+                this.saveToStorage();
+                this.render();
+            }
+        });
+
+        document.getElementById('bedRotation').addEventListener('input', (e) => {
+            if (this.selectedBed) {
+                this.selectedBed.rotation = parseInt(e.target.value) || 0;
                 this.saveToStorage();
                 this.render();
             }
@@ -149,10 +177,22 @@ class GardenPlanner {
             if (this.selectedBed && confirm('Delete this bed?')) {
                 this.beds = this.beds.filter(b => b.id !== this.selectedBed.id);
                 this.selectedBed = null;
+                this.bedDetailMode = false;
                 this.renderBedsList();
                 this.updateSidebar();
                 this.saveToStorage();
                 this.render();
+            }
+        });
+
+        // Detail view toggle
+        document.getElementById('exitDetailView').addEventListener('click', () => {
+            this.exitBedDetailView();
+        });
+
+        document.getElementById('editPlantsBtn').addEventListener('click', () => {
+            if (this.selectedBed) {
+                this.enterBedDetailView();
             }
         });
 
@@ -176,19 +216,11 @@ class GardenPlanner {
             this.saveAddPlantToBed();
         });
 
-        document.getElementById('fillMethod').addEventListener('change', (e) => {
-            this.updateFillMethodUI(e.target.value);
-        });
-
-        document.getElementById('fillValue').addEventListener('input', () => {
-            this.updateFillPreview();
-        });
-
-        document.getElementById('fillPattern').addEventListener('change', () => {
-            this.updateFillPreview();
-        });
-
         document.getElementById('plantSpacing').addEventListener('input', () => {
+            this.updateFillPreview();
+        });
+
+        document.getElementById('plantName').addEventListener('input', () => {
             this.updateFillPreview();
         });
 
@@ -199,6 +231,10 @@ class GardenPlanner {
         });
 
         // Toolbar buttons
+        document.getElementById('reportBtn').addEventListener('click', () => {
+            this.openReportModal();
+        });
+
         document.getElementById('printBtn').addEventListener('click', () => {
             this.print();
         });
@@ -214,6 +250,19 @@ class GardenPlanner {
             }
         });
 
+        // Report modal
+        document.getElementById('closeReport').addEventListener('click', () => {
+            this.closeReportModal();
+        });
+
+        document.getElementById('closeReportBtn').addEventListener('click', () => {
+            this.closeReportModal();
+        });
+
+        document.getElementById('printReport').addEventListener('click', () => {
+            window.print();
+        });
+
         // Close modals when clicking outside
         document.getElementById('addBedModal').addEventListener('click', (e) => {
             if (e.target.id === 'addBedModal') {
@@ -224,6 +273,12 @@ class GardenPlanner {
         document.getElementById('addPlantToBedModal').addEventListener('click', (e) => {
             if (e.target.id === 'addPlantToBedModal') {
                 this.closeAddPlantToBedModal();
+            }
+        });
+
+        document.getElementById('reportModal').addEventListener('click', (e) => {
+            if (e.target.id === 'reportModal') {
+                this.closeReportModal();
             }
         });
     }
@@ -263,78 +318,148 @@ class GardenPlanner {
 
     setTool(tool) {
         this.currentTool = tool;
-
-        // Update button states
-        const placePlantBtn = document.getElementById('placePlantTool');
-        if (placePlantBtn) {
-            if (tool === 'place-plant') {
-                placePlantBtn.classList.add('active');
-                this.canvas.canvas.style.cursor = 'crosshair';
-            } else {
-                placePlantBtn.classList.remove('active');
-                this.canvas.canvas.style.cursor = 'default';
-            }
-        }
+        // Update button states as needed
     }
 
     handleMouseDown(e) {
         const worldPos = this.canvas.screenToWorld(e.offsetX, e.offsetY);
 
-        if (this.currentTool === 'place-plant') {
-            // Place a plant manually - but we need to know which plant to place
-            // For now, we'll skip this - user needs to use the Add Plant dialog
-            return;
+        // Check if clicking on rotation handle of selected bed first (it's outside bed bounds)
+        if (this.selectedBed) {
+            const isRotationHandle = this.canvas.getRotationHandle(worldPos.x, worldPos.y, this.selectedBed);
+
+            if (isRotationHandle) {
+                // Start rotating
+                this.isRotating = true;
+                this.rotationStart = {
+                    angle: Math.atan2(worldPos.y - this.selectedBed.y, worldPos.x - this.selectedBed.x),
+                    initialRotation: this.selectedBed.rotation || 0
+                };
+                this.canvas.canvas.style.cursor = 'grabbing';
+                return;
+            }
+
+            // Check if clicking on a plant group divider
+            const dividerInfo = this.canvas.getPlantDivider(worldPos.x, worldPos.y, this.selectedBed);
+            if (dividerInfo) {
+                this.isDraggingDivider = true;
+                this.draggedDividerIndex = dividerInfo.index;
+                this.dragStart = worldPos;
+                this.canvas.canvas.style.cursor = dividerInfo.cursor;
+                return;
+            }
         }
 
-        // Check if clicking on a bed
-        const clickedBed = this.beds.find(bed =>
-            this.canvas.isPointInBed(worldPos.x, worldPos.y, bed)
-        );
-
-        if (clickedBed) {
+        // In detail mode, we're always working on the selected bed
+        if (this.bedDetailMode) {
             // Check if clicking on a resize handle
-            const handle = this.canvas.getResizeHandle(worldPos.x, worldPos.y, clickedBed);
+            const handle = this.canvas.getResizeHandle(worldPos.x, worldPos.y, this.selectedBed);
 
             if (handle) {
                 // Start resizing
                 this.isResizing = true;
                 this.resizeHandle = handle;
-                this.selectedBed = clickedBed;
                 this.dragStart = worldPos;
-                this.bedDragStart = { ...clickedBed };
-                this.renderBedsList();
-                this.updateSidebar();
+                this.bedDragStart = { ...this.selectedBed };
+            } else if (this.canvas.isPointInBed(worldPos.x, worldPos.y, this.selectedBed)) {
+                // Start dragging bed (though in detail mode, this just pans)
+                this.canvas.isPanning = true;
+                this.canvas.lastMouseX = e.offsetX;
+                this.canvas.lastMouseY = e.offsetY;
+                this.canvas.canvas.classList.add('grabbing');
             } else {
-                // Start dragging bed
-                this.isDraggingBed = true;
-                this.selectedBed = clickedBed;
-                this.dragStart = worldPos;
-                this.bedDragStart = { x: clickedBed.x, y: clickedBed.y };
-                this.renderBedsList();
-                this.updateSidebar();
-                this.canvas.canvas.style.cursor = 'grabbing';
+                // Pan the view
+                this.canvas.isPanning = true;
+                this.canvas.lastMouseX = e.offsetX;
+                this.canvas.lastMouseY = e.offsetY;
+                this.canvas.canvas.classList.add('grabbing');
             }
         } else {
-            // Deselect bed and start panning
-            if (this.selectedBed) {
-                this.selectedBed = null;
-                this.renderBedsList();
-                this.updateSidebar();
-                this.render();
-            }
+            // Overview mode - check if clicking on a bed
+            const clickedBed = this.beds.find(bed =>
+                this.canvas.isPointInBed(worldPos.x, worldPos.y, bed)
+            );
 
-            this.canvas.isPanning = true;
-            this.canvas.lastMouseX = e.offsetX;
-            this.canvas.lastMouseY = e.offsetY;
-            this.canvas.canvas.classList.add('grabbing');
+            if (clickedBed) {
+                // Check if clicking on a resize handle
+                const handle = this.canvas.getResizeHandle(worldPos.x, worldPos.y, clickedBed);
+
+                if (handle) {
+                    // Start resizing
+                    this.isResizing = true;
+                    this.resizeHandle = handle;
+                    this.selectedBed = clickedBed;
+                    this.dragStart = worldPos;
+                    this.bedDragStart = { ...clickedBed };
+                    this.renderBedsList();
+                    this.updateSidebar();
+                } else {
+                    // Detect double-click
+                    const currentTime = Date.now();
+                    const isDoubleClick =
+                        this.lastClickedBed === clickedBed &&
+                        (currentTime - this.lastClickTime) < 300; // 300ms threshold
+
+                    this.lastClickTime = currentTime;
+                    this.lastClickedBed = clickedBed;
+
+                    if (isDoubleClick) {
+                        // Double-click: Enter detail view
+                        this.selectedBed = clickedBed;
+                        this.renderBedsList();
+                        this.enterBedDetailView();
+                    } else {
+                        // Single click: Select bed (can drag/move)
+                        this.isDraggingBed = true;
+                        this.selectedBed = clickedBed;
+                        this.dragStart = worldPos;
+                        this.bedDragStart = { x: clickedBed.x, y: clickedBed.y };
+                        this.renderBedsList();
+                        this.updateSidebar();
+                        this.canvas.canvas.style.cursor = 'grabbing';
+                    }
+                }
+            } else {
+                // Deselect bed and start panning
+                if (this.selectedBed) {
+                    this.selectedBed = null;
+                    this.renderBedsList();
+                    this.updateSidebar();
+                    this.render();
+                }
+
+                this.canvas.isPanning = true;
+                this.canvas.lastMouseX = e.offsetX;
+                this.canvas.lastMouseY = e.offsetY;
+                this.canvas.canvas.classList.add('grabbing');
+            }
         }
     }
 
     handleMouseMove(e) {
         const worldPos = this.canvas.screenToWorld(e.offsetX, e.offsetY);
 
-        if (this.isDraggingBed && this.selectedBed && this.dragStart) {
-            // Move the bed
+        if (this.isDraggingDivider && this.selectedBed && this.dragStart !== null) {
+            // Handle plant group divider dragging
+            this.handleDividerDrag(worldPos);
+            this.render();
+        } else if (this.isRotating && this.selectedBed && this.rotationStart) {
+            // Rotate the bed
+            const currentAngle = Math.atan2(
+                worldPos.y - this.selectedBed.y,
+                worldPos.x - this.selectedBed.x
+            );
+            const angleDiff = currentAngle - this.rotationStart.angle;
+            let newRotation = this.rotationStart.initialRotation + (angleDiff * 180 / Math.PI);
+
+            // Normalize to 0-359
+            newRotation = ((newRotation % 360) + 360) % 360;
+
+            this.selectedBed.rotation = Math.round(newRotation);
+            this.updateSidebar();
+            this.render();
+        } else if (this.isDraggingBed && this.selectedBed && this.dragStart && !this.bedDetailMode) {
+            // Move the bed (only in overview mode)
             const dx = worldPos.x - this.dragStart.x;
             const dy = worldPos.y - this.dragStart.y;
 
@@ -369,6 +494,23 @@ class GardenPlanner {
             this.render();
         } else {
             // Update cursor based on what's under mouse
+
+            // Check rotation handle first (it's outside bed bounds)
+            if (this.selectedBed) {
+                const isRotationHandle = this.canvas.getRotationHandle(worldPos.x, worldPos.y, this.selectedBed);
+                if (isRotationHandle) {
+                    this.canvas.canvas.style.cursor = 'grab';
+                    return;
+                }
+
+                // Check if hovering over a plant group divider
+                const dividerInfo = this.canvas.getPlantDivider(worldPos.x, worldPos.y, this.selectedBed);
+                if (dividerInfo) {
+                    this.canvas.canvas.style.cursor = dividerInfo.cursor;
+                    return;
+                }
+            }
+
             const bed = this.beds.find(b =>
                 this.canvas.isPointInBed(worldPos.x, worldPos.y, b)
             );
@@ -383,21 +525,25 @@ class GardenPlanner {
             } else if (bed) {
                 this.canvas.canvas.style.cursor = 'pointer';
             } else {
-                this.canvas.canvas.style.cursor = this.currentTool === 'place-plant' ? 'crosshair' : 'default';
+                this.canvas.canvas.style.cursor = 'default';
             }
         }
     }
 
     handleMouseUp(e) {
-        if (this.isDraggingBed || this.isResizing) {
+        if (this.isDraggingBed || this.isResizing || this.isRotating || this.isDraggingDivider) {
             this.saveToStorage();
         }
 
         this.isDraggingBed = false;
         this.isResizing = false;
+        this.isRotating = false;
+        this.isDraggingDivider = false;
         this.resizeHandle = null;
         this.dragStart = null;
         this.bedDragStart = null;
+        this.rotationStart = null;
+        this.draggedDividerIndex = null;
 
         if (this.canvas.isPanning) {
             this.canvas.isPanning = false;
@@ -509,12 +655,16 @@ class GardenPlanner {
         const radiusGroup = document.getElementById('radiusGroup');
         const widthGroup = document.getElementById('widthGroup');
         const heightGroup = document.getElementById('heightGroup');
+        const overviewControls = document.getElementById('overviewControls');
+        const detailControls = document.getElementById('detailControls');
+        const bedSelectedHint = document.getElementById('bedSelectedHint');
 
         if (this.selectedBed) {
             selectedBedPanel.style.display = 'block';
 
             document.getElementById('bedName').value = this.selectedBed.name || '';
             document.getElementById('bedType').value = this.selectedBed.type;
+            document.getElementById('bedRotation').value = this.selectedBed.rotation || 0;
 
             if (this.selectedBed.type === 'rectangle') {
                 document.getElementById('bedWidth').value = Math.round(this.selectedBed.width);
@@ -529,9 +679,20 @@ class GardenPlanner {
                 radiusGroup.style.display = 'block';
             }
 
-            this.updateBedPlantsList();
+            // Show appropriate controls based on mode
+            if (this.bedDetailMode) {
+                overviewControls.style.display = 'none';
+                detailControls.style.display = 'block';
+                bedSelectedHint.style.display = 'none';
+                this.updateBedPlantsList();
+            } else {
+                overviewControls.style.display = 'block';
+                detailControls.style.display = 'none';
+                bedSelectedHint.style.display = 'block';
+            }
         } else {
             selectedBedPanel.style.display = 'none';
+            bedSelectedHint.style.display = 'none';
         }
     }
 
@@ -545,31 +706,69 @@ class GardenPlanner {
             return;
         }
 
-        container.innerHTML = this.selectedBed.plantGroups.map((group, index) => {
+        // Add help text for multiple plant groups
+        const helpText = this.selectedBed.plantGroups.length > 1 ?
+            '<div style="color: #4299e1; font-size: 12px; margin-bottom: 12px; padding: 8px; background: #ebf8ff; border-radius: 4px;">💡 Drag the divider lines on the canvas to resize plant regions</div>' : '';
+
+        container.innerHTML = helpText + this.selectedBed.plantGroups.map((group, index) => {
+            const layerLabel = index === 0 ? 'Top/Left' : index === this.selectedBed.plantGroups.length - 1 ? 'Bottom/Right' : `Layer ${index + 1}`;
+            const maxQty = group.maxQuantity || 0;
+            const currentQty = group.quantity || 0;
+            const atMax = currentQty >= maxQty;
+
             return `
-                <div class="bed-plant-item">
-                    <div class="bed-plant-info">
-                        <div class="bed-plant-name">
-                            <span class="plant-color-dot" style="background-color: ${group.color}"></span>
-                            ${group.name}
-                        </div>
-                        <div class="bed-plant-count">${group.positions.length} plants • ${group.spacing}" spacing</div>
+                <div class="bed-plant-item" draggable="true" data-index="${index}">
+                    <div class="drag-handle" title="Drag to reorder">
+                        <svg width="12" height="16" viewBox="0 0 12 16">
+                            <circle cx="3" cy="4" r="1.5" fill="currentColor"/>
+                            <circle cx="9" cy="4" r="1.5" fill="currentColor"/>
+                            <circle cx="3" cy="8" r="1.5" fill="currentColor"/>
+                            <circle cx="9" cy="8" r="1.5" fill="currentColor"/>
+                            <circle cx="3" cy="12" r="1.5" fill="currentColor"/>
+                            <circle cx="9" cy="12" r="1.5" fill="currentColor"/>
+                        </svg>
                     </div>
-                    <div class="plant-item-actions">
-                        <button class="icon-btn" onclick="app.editPlantGroup(${index})" title="Edit">
-                            <svg width="16" height="16" viewBox="0 0 16 16">
-                                <path d="M11 2L14 5L5 14H2V11L11 2Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
-                            </svg>
-                        </button>
-                        <button class="icon-btn danger" onclick="app.removePlantGroup(${index})" title="Remove">
-                            <svg width="16" height="16" viewBox="0 0 16 16">
-                                <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="2"/>
-                            </svg>
-                        </button>
+                    <div class="bed-plant-info-full">
+                        <div class="bed-plant-header">
+                            <div class="bed-plant-name">
+                                <span class="plant-color-dot" style="background-color: ${group.color}"></span>
+                                ${group.name}
+                                <span class="layer-label">${layerLabel}</span>
+                            </div>
+                            <div class="plant-item-actions">
+                                <button class="icon-btn" onclick="app.editPlantGroup(${index})" title="Edit">
+                                    <svg width="16" height="16" viewBox="0 0 16 16">
+                                        <path d="M11 2L14 5L5 14H2V11L11 2Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                                    </svg>
+                                </button>
+                                <button class="icon-btn danger" onclick="app.removePlantGroup(${index})" title="Remove">
+                                    <svg width="16" height="16" viewBox="0 0 16 16">
+                                        <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="2"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="bed-plant-count">${currentQty} of ${maxQty} plants • ${group.spacing}" spacing</div>
+                        <div class="quantity-control">
+                            <input type="range"
+                                   class="quantity-slider"
+                                   min="0"
+                                   max="${maxQty}"
+                                   value="${currentQty}"
+                                   data-index="${index}"
+                                   onchange="app.updatePlantQuantity(${index}, this.value)">
+                            <div class="quantity-labels">
+                                <span>0</span>
+                                <span class="${atMax ? 'at-max' : ''}">${maxQty} max</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             `;
         }).join('');
+
+        // Setup drag and drop for reordering
+        this.setupPlantGroupDragDrop();
     }
 
     editPlantGroup(index) {
@@ -587,9 +786,6 @@ class GardenPlanner {
         document.getElementById('plantColor').value = group.color;
         this.updateColorSwatchSelection();
 
-        document.getElementById('fillMethod').value = 'auto';
-        document.getElementById('fillPattern').value = 'grid';
-        this.updateFillMethodUI('auto');
         this.updateFillPreview();
 
         // Change modal title and button text
@@ -603,10 +799,260 @@ class GardenPlanner {
         if (!this.selectedBed) return;
 
         this.selectedBed.plantGroups.splice(index, 1);
+
+        // Reset region boundaries when plant count changes
+        this.selectedBed.regionBoundaries = null;
+
+        this.recalculateAllPlantPositions();
         this.updateBedPlantsList();
         this.renderBedsList();
         this.saveToStorage();
         this.render();
+    }
+
+    setupPlantGroupDragDrop() {
+        const container = document.getElementById('bedPlantsList');
+        let draggedElement = null;
+        let draggedIndex = null;
+
+        const items = document.querySelectorAll('.bed-plant-item[draggable="true"]');
+
+        items.forEach((item) => {
+            item.addEventListener('dragstart', (e) => {
+                draggedElement = item;
+                draggedIndex = parseInt(item.dataset.index);
+                item.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/html', item.innerHTML);
+            });
+
+            item.addEventListener('dragend', (e) => {
+                item.classList.remove('dragging');
+
+                // Calculate new index based on DOM position
+                const allItems = [...container.querySelectorAll('.bed-plant-item')];
+                const newIndex = allItems.indexOf(draggedElement);
+
+                if (draggedIndex !== null && draggedIndex !== newIndex) {
+                    this.reorderPlantGroup(draggedIndex, newIndex);
+                }
+
+                draggedElement = null;
+                draggedIndex = null;
+            });
+
+            item.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+
+                const afterElement = this.getDragAfterElement(container, e.clientY);
+                const dragging = document.querySelector('.dragging');
+
+                if (dragging) {
+                    if (afterElement == null) {
+                        container.appendChild(dragging);
+                    } else {
+                        container.insertBefore(dragging, afterElement);
+                    }
+                }
+            });
+        });
+
+        // Also add dragover to container
+        container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+    }
+
+    getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('.bed-plant-item:not(.dragging)')];
+
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    reorderPlantGroup(fromIndex, toIndex) {
+        if (!this.selectedBed || !this.selectedBed.plantGroups) return;
+
+        const groups = this.selectedBed.plantGroups;
+        const [movedGroup] = groups.splice(fromIndex, 1);
+        groups.splice(toIndex, 0, movedGroup);
+
+        // Keep existing boundaries when reordering - just swap the regions
+        // No need to reset boundaries here
+
+        // Recalculate all plant positions based on new layer order
+        this.recalculateAllPlantPositions();
+
+        this.updateBedPlantsList();
+        this.renderBedsList();
+        this.saveToStorage();
+        this.render();
+    }
+
+    updatePlantQuantity(index, newQuantity) {
+        if (!this.selectedBed || !this.selectedBed.plantGroups[index]) return;
+
+        const group = this.selectedBed.plantGroups[index];
+        group.quantity = parseInt(newQuantity);
+
+        // Recalculate positions with current region boundaries
+        this.recalculateAllPlantPositions();
+        this.updateBedPlantsList();
+        this.renderBedsList();
+        this.saveToStorage();
+        this.render();
+    }
+
+    handleDividerDrag(worldPos) {
+        if (!this.selectedBed || !this.selectedBed.plantGroups || this.draggedDividerIndex === null) return;
+
+        const isCircle = this.selectedBed.type === 'circle';
+        const width = this.selectedBed.width || 0;
+        const height = this.selectedBed.height || 0;
+        const radius = this.selectedBed.radius || 0;
+        const isHorizontal = width > height;
+
+        // Calculate drag delta
+        const dx = worldPos.x - this.dragStart.x;
+        const dy = worldPos.y - this.dragStart.y;
+
+        // Initialize region boundaries if not set
+        if (!this.selectedBed.regionBoundaries) {
+            this.initializeRegionBoundaries();
+        }
+
+        // Update region boundary based on drag
+        const boundaries = this.selectedBed.regionBoundaries;
+        const dividerIndex = this.draggedDividerIndex;
+
+        if (isCircle) {
+            // For circular beds, adjust radial boundaries
+            const totalRadius = radius;
+            const delta = Math.sqrt(dx * dx + dy * dy) * (dx + dy > 0 ? 1 : -1);
+            const percentageDelta = delta / totalRadius;
+
+            // Adjust the boundary
+            boundaries[dividerIndex] = Math.max(0.1, Math.min(0.9, boundaries[dividerIndex] + percentageDelta));
+        } else if (isHorizontal) {
+            // For horizontal beds, adjust horizontal boundaries (top to bottom)
+            const totalHeight = height;
+            const delta = dy;
+            const percentageDelta = delta / totalHeight;
+
+            boundaries[dividerIndex] = Math.max(0.1, Math.min(0.9, boundaries[dividerIndex] + percentageDelta));
+        } else {
+            // For vertical beds, adjust vertical boundaries (left to right)
+            const totalWidth = width;
+            const delta = dx;
+            const percentageDelta = delta / totalWidth;
+
+            boundaries[dividerIndex] = Math.max(0.1, Math.min(0.9, boundaries[dividerIndex] + percentageDelta));
+        }
+
+        // Normalize boundaries to ensure they're in order
+        boundaries.sort((a, b) => a - b);
+
+        // Update drag start for next frame
+        this.dragStart = worldPos;
+
+        // Recalculate plant positions with new boundaries
+        this.recalculateAllPlantPositions();
+        this.updateBedPlantsList();
+    }
+
+    initializeRegionBoundaries() {
+        if (!this.selectedBed || !this.selectedBed.plantGroups) return;
+
+        const numGroups = this.selectedBed.plantGroups.length;
+        if (numGroups <= 1) {
+            this.selectedBed.regionBoundaries = [];
+            return;
+        }
+
+        // Create evenly spaced boundaries
+        const boundaries = [];
+        for (let i = 1; i < numGroups; i++) {
+            boundaries.push(i / numGroups);
+        }
+
+        this.selectedBed.regionBoundaries = boundaries;
+    }
+
+    recalculateAllPlantPositions() {
+        if (!this.selectedBed || !this.selectedBed.plantGroups) return { success: true };
+
+        const isCircle = this.selectedBed.type === 'circle';
+        const width = this.selectedBed.width || 0;
+        const height = this.selectedBed.height || 0;
+        const radius = this.selectedBed.radius || 0;
+        const isHorizontal = width > height;
+
+        // Initialize region boundaries if needed (equal division)
+        if (!this.selectedBed.regionBoundaries ||
+            this.selectedBed.regionBoundaries.length !== this.selectedBed.plantGroups.length - 1) {
+            this.initializeRegionBoundaries();
+        }
+
+        let hasNewPlants = false;
+
+        // Recalculate positions for each plant group in its own region
+        // No inter-layer spacing - each plant owns its region completely
+        this.selectedBed.plantGroups.forEach((group, layerIndex) => {
+            // Get region bounds for this layer
+            const regionBounds = this.getRegionBounds(layerIndex);
+
+            // Calculate maximum possible plants for this layer within its region
+            // Pass empty previousLayers so plants don't avoid each other
+            const maxPositions = PlantPlacer.placeInRegion(
+                width,
+                height,
+                group.spacing,
+                isCircle,
+                radius,
+                isHorizontal,
+                regionBounds
+            );
+
+            // Update max quantity
+            group.maxQuantity = maxPositions.length;
+
+            // If quantity not set yet (new plant), set to max
+            if (group.quantity === undefined || group.quantity === 0) {
+                group.quantity = group.maxQuantity;
+                hasNewPlants = true;
+            }
+
+            // Limit to user's desired quantity
+            const desiredQuantity = Math.min(group.quantity, group.maxQuantity);
+            group.positions = maxPositions.slice(0, desiredQuantity);
+        });
+
+        return { success: true };
+    }
+
+    getRegionBounds(layerIndex) {
+        if (!this.selectedBed || !this.selectedBed.plantGroups) return { start: 0, end: 1 };
+
+        const boundaries = this.selectedBed.regionBoundaries || [];
+        const numGroups = this.selectedBed.plantGroups.length;
+
+        if (numGroups === 1) {
+            return { start: 0, end: 1 };
+        }
+
+        const start = layerIndex === 0 ? 0 : boundaries[layerIndex - 1];
+        const end = layerIndex === numGroups - 1 ? 1 : boundaries[layerIndex];
+
+        return { start, end };
     }
 
     // Modal management
@@ -681,6 +1127,9 @@ class GardenPlanner {
         this.saveToStorage();
         this.render();
         this.closeAddBedModal();
+
+        // Fit to screen to show the new bed
+        this.canvas.fitToScreen(this.beds);
     }
 
     openAddPlantToBedModal() {
@@ -697,9 +1146,6 @@ class GardenPlanner {
         document.getElementById('plantColor').value = this.selectedColor;
         this.updateColorSwatchSelection();
 
-        document.getElementById('fillMethod').value = 'auto';
-        document.getElementById('fillPattern').value = 'grid';
-        this.updateFillMethodUI('auto');
         document.getElementById('fillPreview').innerHTML = '<div style="color: #718096;">Enter plant details to see preview</div>';
 
         // Reset modal title and button text
@@ -749,43 +1195,50 @@ class GardenPlanner {
             return;
         }
 
-        const method = document.getElementById('fillMethod').value;
-        const pattern = document.getElementById('fillPattern').value;
-        const value = parseInt(document.getElementById('fillValue').value) || 0;
-
         const isCircle = this.selectedBed.type === 'circle';
         const width = this.selectedBed.width || 0;
         const height = this.selectedBed.height || 0;
         const radius = this.selectedBed.radius || 0;
+        const isHorizontal = width > height;
 
-        // Get existing plant groups (excluding the one being edited)
-        let existingPlantGroups = [];
-        if (this.selectedBed.plantGroups) {
-            existingPlantGroups = this.selectedBed.plantGroups.filter((group, index) => {
-                return this.editingPlantIndex === null || index !== this.editingPlantIndex;
-            });
-        }
+        // Determine layer info
+        const currentLayerCount = this.selectedBed.plantGroups ? this.selectedBed.plantGroups.length : 0;
+        const layerIndex = this.editingPlantIndex !== null ? this.editingPlantIndex : currentLayerCount;
+        const totalLayers = this.editingPlantIndex !== null ? currentLayerCount : currentLayerCount + 1;
 
-        // Use smart placement that avoids existing plants
-        const positions = PlantPlacer.placeWithAwareness(
+        // Calculate region bounds (equal division for preview)
+        const regionBounds = {
+            start: layerIndex / totalLayers,
+            end: (layerIndex + 1) / totalLayers
+        };
+
+        // Calculate preview positions using simple region placement
+        const positions = PlantPlacer.placeInRegion(
             width,
             height,
             spacing,
-            pattern,
-            method,
-            value,
             isCircle,
             radius,
-            existingPlantGroups
+            isHorizontal,
+            regionBounds
         );
+
+        const regionPercent = Math.round((regionBounds.end - regionBounds.start) * 100);
+        const layerPosition = layerIndex === 0 ? 'first (top/left)' :
+                             layerIndex === totalLayers - 1 ? 'last (bottom/right)' :
+                             `${layerIndex + 1} of ${totalLayers}`;
+
+        const orientation = isCircle ? 'circular' : isHorizontal ? 'horizontal' : 'vertical';
+        const fillDirection = isCircle ? 'concentric rings' : isHorizontal ? 'top-to-bottom rows' : 'left-to-right columns';
 
         const preview = document.getElementById('fillPreview');
         preview.innerHTML = `
             <strong>Preview:</strong><br>
             This will place <strong>${positions ? positions.length : 0}</strong> ${name} plants<br>
-            Pattern: ${pattern === 'grid' ? 'Grid' : 'Hexagonal'}<br>
-            Spacing: ${spacing} inches
-            ${existingPlantGroups.length > 0 ? '<br><em>(avoiding existing plants)</em>' : ''}
+            Region: ${regionPercent}% of bed (${layerPosition})<br>
+            Orientation: ${orientation} (fills ${fillDirection})<br>
+            Spacing: ${spacing} inches<br>
+            <em style="color: #4299e1; font-size: 12px;">💡 Drag dividers on canvas to adjust region sizes</em>
         `;
     }
 
@@ -801,70 +1254,88 @@ class GardenPlanner {
             return;
         }
 
-        const method = document.getElementById('fillMethod').value;
-        const pattern = document.getElementById('fillPattern').value;
-        const value = parseInt(document.getElementById('fillValue').value) || 0;
-
-        const isCircle = this.selectedBed.type === 'circle';
-        const width = this.selectedBed.width || 0;
-        const height = this.selectedBed.height || 0;
-        const radius = this.selectedBed.radius || 0;
-
         if (!this.selectedBed.plantGroups) {
             this.selectedBed.plantGroups = [];
         }
 
-        // Get existing plant groups (excluding the one being edited)
-        let existingPlantGroups = this.selectedBed.plantGroups.filter((group, index) => {
-            return this.editingPlantIndex === null || index !== this.editingPlantIndex;
-        });
-
-        // Use smart placement that avoids existing plants
-        const positions = PlantPlacer.placeWithAwareness(
-            width,
-            height,
-            spacing,
-            pattern,
-            method,
-            value,
-            isCircle,
-            radius,
-            existingPlantGroups
-        );
-
         if (this.editingPlantIndex !== null) {
-            // Update existing plant group
-            this.selectedBed.plantGroups[this.editingPlantIndex] = {
-                name: name,
-                spacing: spacing,
-                color: color,
-                positions: positions
-            };
+            // Update existing plant group properties (keep quantity)
+            this.selectedBed.plantGroups[this.editingPlantIndex].name = name;
+            this.selectedBed.plantGroups[this.editingPlantIndex].spacing = spacing;
+            this.selectedBed.plantGroups[this.editingPlantIndex].color = color;
         } else {
-            // Add new plant group
+            // Add new plant group with auto-fill
             this.selectedBed.plantGroups.push({
                 name: name,
                 spacing: spacing,
                 color: color,
-                positions: positions
+                maxQuantity: 0,  // Will be calculated
+                quantity: 0,     // Will be set to max initially
+                positions: []
             });
         }
+
+        // Recalculate all positions - regions are divided equally
+        this.recalculateAllPlantPositions();
 
         this.updateBedPlantsList();
         this.renderBedsList();
         this.saveToStorage();
-        this.render();
         this.closeAddPlantToBedModal();
+
+        // Automatically enter detail view after adding/editing a plant
+        if (!this.bedDetailMode) {
+            this.enterBedDetailView();
+        } else {
+            this.render();
+        }
+    }
+
+    enterBedDetailView() {
+        if (!this.selectedBed) return;
+
+        this.bedDetailMode = true;
+
+        // Fit the selected bed to screen in detail mode FIRST
+        this.canvas.fitBedToScreen(this.selectedBed);
+
+        // Update UI
+        const bedName = this.selectedBed.name || 'Unnamed Bed';
+        document.getElementById('detailViewBedName').textContent = `Detail View: ${bedName}`;
+        document.getElementById('detailViewBanner').style.display = 'flex';
+        this.updateSidebar();
+
+        // Render with new zoom
+        this.render();
+    }
+
+    exitBedDetailView() {
+        this.bedDetailMode = false;
+
+        // Fit all beds to screen
+        if (this.beds.length > 0) {
+            this.canvas.fitToScreen(this.beds);
+        }
+
+        // Update UI
+        document.getElementById('detailViewBanner').style.display = 'none';
+        this.updateSidebar();
+        this.render();
     }
 
     render() {
         this.canvas.clear();
 
-        // Draw all beds
-        this.beds.forEach(bed => {
-            const isSelected = this.selectedBed && bed.id === this.selectedBed.id;
-            this.canvas.drawBed(bed, isSelected);
-        });
+        if (this.bedDetailMode && this.selectedBed) {
+            // Detail mode: only draw the selected bed
+            this.canvas.drawBed(this.selectedBed, true);
+        } else {
+            // Overview mode: draw all beds
+            this.beds.forEach(bed => {
+                const isSelected = this.selectedBed && bed.id === this.selectedBed.id;
+                this.canvas.drawBed(bed, isSelected);
+            });
+        }
     }
 
     saveToStorage() {
@@ -895,6 +1366,122 @@ class GardenPlanner {
                 console.error('Failed to load saved data', e);
             }
         }
+    }
+
+    openReportModal() {
+        if (this.beds.length === 0) {
+            alert('Add some beds before generating a report!');
+            return;
+        }
+
+        this.generateReport();
+        document.getElementById('reportModal').classList.add('active');
+    }
+
+    closeReportModal() {
+        document.getElementById('reportModal').classList.remove('active');
+    }
+
+    generateReport() {
+        const container = document.getElementById('reportContent');
+
+        // Calculate totals
+        let totalBeds = this.beds.length;
+        let totalPlants = 0;
+        let totalPlantTypes = 0;
+
+        this.beds.forEach(bed => {
+            if (bed.plantGroups) {
+                totalPlantTypes += bed.plantGroups.length;
+                bed.plantGroups.forEach(group => {
+                    totalPlants += group.positions ? group.positions.length : 0;
+                });
+            }
+        });
+
+        // Generate HTML
+        let html = `
+            <div class="report-summary">
+                <h4>Summary</h4>
+                <div class="report-summary-stats">
+                    <div class="report-stat">
+                        <div class="report-stat-value">${totalBeds}</div>
+                        <div class="report-stat-label">Total Beds</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="report-stat-value">${totalPlants}</div>
+                        <div class="report-stat-label">Total Plants</div>
+                    </div>
+                    <div class="report-stat">
+                        <div class="report-stat-value">${totalPlantTypes}</div>
+                        <div class="report-stat-label">Plant Types</div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Generate bed details
+        this.beds.forEach(bed => {
+            const totalBedPlants = bed.plantGroups ?
+                bed.plantGroups.reduce((sum, g) => sum + (g.positions ? g.positions.length : 0), 0) : 0;
+
+            const dimensions = bed.type === 'rectangle' ?
+                `${Math.round(bed.width)}" × ${Math.round(bed.height)}"` :
+                `Radius: ${Math.round(bed.radius)}"`;
+
+            html += `
+                <div class="report-bed">
+                    <div class="report-bed-header">
+                        <div>
+                            <div class="report-bed-title">${bed.name || 'Unnamed Bed'}</div>
+                            <div class="report-bed-dimensions">${dimensions} • ${bed.type === 'rectangle' ? 'Rectangle' : 'Circle'}</div>
+                        </div>
+                        <div class="report-bed-total">
+                            <div class="report-bed-total-value">${totalBedPlants}</div>
+                            <div class="report-bed-total-label">Total Plants</div>
+                        </div>
+                    </div>
+            `;
+
+            if (bed.plantGroups && bed.plantGroups.length > 0) {
+                html += `
+                    <table class="report-plants-table">
+                        <thead>
+                            <tr>
+                                <th>Plant</th>
+                                <th>Spacing</th>
+                                <th style="text-align: right;">Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                bed.plantGroups.forEach(group => {
+                    const quantity = group.positions ? group.positions.length : 0;
+                    html += `
+                        <tr>
+                            <td>
+                                <span class="report-plant-color" style="background-color: ${group.color}"></span>
+                                ${group.name}
+                            </td>
+                            <td>${group.spacing}"</td>
+                            <td style="text-align: right; font-weight: 600;">${quantity}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                html += `<p style="color: #718096; font-style: italic;">No plants in this bed</p>`;
+            }
+
+            html += `</div>`;
+        });
+
+        container.innerHTML = html;
     }
 
     print() {
